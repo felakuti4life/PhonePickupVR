@@ -1,104 +1,139 @@
-﻿using UnityEngine;
+﻿
+using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
 
+
+
 public class gameManager : MonoBehaviour {
-	public enum STATUS {LISTENING, PLAYING};
-	private ArrayList allRingtoneSources;
-	private ArrayList incorrectTones;
-	public AudioSource correctTone;
-
-	private ArrayList allPhones;
+	public enum STATUS {START_SCREEN, PLAYING};
+	
 	private int nPhones = 6;
+	protected GameObject player;
+	protected CharacterController movement;
+	protected GameObject highlightedPhone;
+	protected GameObject lastHighlightedPhone;
 	public float startTime;
-
-	public STATUS stat = STATUS.LISTENING;
+	public float timeLeft = 50.0f;
+	private float guess_penalty = 3.0f;
+	private float score_time = 8.0f;
+	private int correct;
+	public STATUS stat = STATUS.START_SCREEN;
 	public int nAttempts = 0;
-	public bool hasWon = false;
+	public bool hasLost = false;
 	public bool waitingOnReset = false;
+	private GameObject objText;
+	private GameObject timerText;
+	private GameObject statusText;
+	public string[] PhoneNames = {"Defense", "Energy", "Justice", "Motor Vehicles", "Agriculture", "Tresury"};
+	private string callToAction = "OBJECTIVE:\nTHE DEPARTMENT\nOF ";
 	// Use this for initialization
+	void applyTimerText(float t) {
+		TextMesh mesh = timerText.GetComponent<TextMesh> ();
+		int minutes = (int) t/60;
+		int seconds = (int) t%60;
+		mesh.text = "" + minutes + ":" + seconds;
+	}
+
+	void applyObjectiveText(int i) {
+		TextMesh mesh = objText.GetComponent<TextMesh> ();
+		mesh.text = callToAction + PhoneNames [i];
+	}
+
+	GameObject FindClosestPhone() {
+		GameObject[] gos;
+		gos = GameObject.FindGameObjectsWithTag("phones");
+		GameObject closest = null;
+		float distance = Mathf.Infinity;
+		Vector3 position = player.transform.position;
+		foreach (GameObject go in gos) {
+			Vector3 diff = go.transform.position - position;
+			float curDistance = diff.sqrMagnitude;
+			if (curDistance < distance) {
+				closest = go;
+				distance = curDistance;
+			}
+		}
+		return closest;
+	}
+
+	void selectNewObjective() {
+		correct = Random.Range (0, nPhones);
+		applyObjectiveText (correct);
+	}
+
+	void applyStatusText(string s) {
+		TextMesh mesh = statusText.GetComponent<TextMesh> ();
+		mesh.text = s;
+		Color c = mesh.color;
+
+		mesh.color = new Color(c.r, c.g, c.b, 1.0f);
+	}
+
+	void checkPhone() {
+		if (highlightedPhone.name == PhoneNames [correct]) {
+			timeLeft = timeLeft + score_time;
+			applyStatusText ("GREAT!");
+		} else {
+			timeLeft = timeLeft - guess_penalty;
+			applyStatusText("WRONG!");
+		}
+	}
 	void Start () {
 		Debug.Log("Start!");
-		initializeRingtones ();
-		initializePhones ();
-		selectRingTones ();
-		assignTonesToPhones ();
-		correctTone.Play ();
-	}
-
-	void initializeRingtones() {
-		allRingtoneSources = new ArrayList ();
-		incorrectTones = new ArrayList ();
-		GameObject ringtoneObject = GameObject.Find("Ringtones");
-		Debug.Log ("Initalizing Ringtones from " + ringtoneObject.name);
-		allRingtoneSources.AddRange(ringtoneObject.GetComponentsInChildren<AudioSource>());
-
-		Debug.Log ("Number of ringtones: " + allRingtoneSources.Count);
-	}
-
-	void selectRingTones() {
-		Random rand = new Random ();
-		int correctRingToneIdx = Random.Range (0,allRingtoneSources.Count);
-		correctTone = allRingtoneSources [correctRingToneIdx] as AudioSource;
-		allRingtoneSources.RemoveAt (correctRingToneIdx);
-		Debug.Log ("Correct audio source: " + correctTone);
-
-		for (int i = 0; i < nPhones-1; i++) {
-			int incorrectRingToneIdx = Random.Range(0, allRingtoneSources.Count);
-			AudioSource incorrectTone = allRingtoneSources[incorrectRingToneIdx] as AudioSource;
-			incorrectTones.Add (incorrectTone);
-			allRingtoneSources.RemoveAt(incorrectRingToneIdx);
-			Debug.Log ("Incorrect Audio Source: " + incorrectTones[i]);
-		}
-	}
-
-	void initializePhones() {
-		allPhones = new ArrayList ();
-
-		GameObject phonesObject = GameObject.Find ("phones");
-		allPhones.AddRange (phonesObject.GetComponentsInChildren<AudioSource> ());
-		Debug.Log ("number of phones: " + allPhones.Count);
-		nPhones = allPhones.Count;
-	}
-
-	void assignTonesToPhones() {
-		//tones2phones inc
-		bool correctToneAssigned = false;
-		int j = 0;
-		for (int i = 0; i < nPhones; i++) {
-			if(Random.Range(0,3) > 1 || j >= nPhones-1) {
-				AudioSource phone = allPhones[i] as AudioSource;
-				phone.clip = correctTone.clip;
-			}
-			else {
-				AudioSource phone = allPhones[i] as AudioSource;
-				AudioSource tone = incorrectTones[j] as AudioSource;
-				phone.clip = tone.clip;
-				//phone.Play();
-				j++;
-			}
-		}
-
+		GameObject phones = GameObject.Find ("phones");
+		objText = GameObject.Find ("ObjectiveText");
+		timerText = GameObject.Find ("Timer");
+		statusText = GameObject.Find ("statusText");
+		player = GameObject.Find ("OVRPlayerController");
+		movement = player.GetComponent<CharacterController> ();
+		movement.enabled = false;
+		highlightedPhone = FindClosestPhone ();
+		Behaviour y = ((Behaviour) highlightedPhone.GetComponent("Halo"));
+		y.enabled = true;
+		lastHighlightedPhone = highlightedPhone;
 	}
 
 	// Update is called once per frame
 	void Update () {
-		if (stat == STATUS.LISTENING && Input.GetKeyDown (KeyCode.Space)) {
+		if (stat == STATUS.START_SCREEN && Input.GetButtonDown("Desktop_Button A")) {
 			stat = STATUS.PLAYING;
-			correctTone.Stop ();
-			for (int i = 0; i < allPhones.Count; i++) {
-				AudioSource phone = allPhones [i] as AudioSource;
-				phone.Play ();
-			}
+			selectNewObjective();
+			movement.enabled = true;
 			startTime = Time.time;
-		} if (hasWon) {
+		} if (hasLost) {
+			applyStatusText("YOU LOSE");
 			waitingOnReset = true;
 
-		} if (waitingOnReset == true && Input.GetKeyDown (KeyCode.Space)) {
+		} if (waitingOnReset == true && Input.GetButtonDown ("Desktop_Button A")) {
 			Debug.Log("Ready to load...");
-			Application.LoadLevel("phonePickup");
+			Application.LoadLevel("OvalOffice");
+		}
+		highlightedPhone = FindClosestPhone();
+		if (highlightedPhone != lastHighlightedPhone) {
+			Debug.Log("cursor switch!");
+			Behaviour x = ((Behaviour)lastHighlightedPhone.GetComponent("Halo"));
+			x.enabled = false;
+			Behaviour y = ((Behaviour) highlightedPhone.GetComponent("Halo"));
+			y.enabled = true;
+			lastHighlightedPhone = highlightedPhone;
 		}
 
+
 	}
+
+	void FixedUpdate () {
+		if (stat == STATUS.PLAYING) {
+			//main loop
+			timeLeft = timeLeft - 0.02f;
+			applyTimerText(timeLeft);
+			if(timeLeft <= 0.0f) hasLost = true;
+			if(Input.GetButtonDown("Desktop_Button A")) {
+				checkPhone();
+			}
+		}
+	}
+
+
 
 }
